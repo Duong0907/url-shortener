@@ -25,7 +25,8 @@ public class User {
     @Column(nullable = false, updatable = false, length = 254)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 100)
+    // NULL for accounts that only sign in through a provider such as Google.
+    @Column(name = "password_hash", length = 100)
     private String passwordHash;
 
     @Column(name = "email_verified", nullable = false)
@@ -46,6 +47,13 @@ public class User {
         this.passwordHash = passwordHash;
     }
 
+    // Created on first provider login. The provider already verified the email.
+    public static User social(String email) {
+        User user = new User(email, null);
+        user.emailVerified = true;
+        return user;
+    }
+
     public void startVerification(String tokenHash, Instant expiresAt) {
         this.verificationTokenHash = tokenHash;
         this.verificationExpiresAt = expiresAt;
@@ -64,5 +72,14 @@ public class User {
         this.emailVerified = true;
         this.verificationTokenHash = null;
         this.verificationExpiresAt = null;
+    }
+
+    // A provider just proved who owns this email. A password set on an unverified
+    // account may belong to someone else who registered the address first, so drop it.
+    public void confirmEmailFromProvider() {
+        if (!emailVerified) {
+            this.passwordHash = null;
+            verifyEmail();
+        }
     }
 }

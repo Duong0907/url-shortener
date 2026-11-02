@@ -65,6 +65,9 @@ class AuthServiceTest {
     @Mock
     VerificationMailer mailer;
 
+    @Mock
+    SocialUserResolver socialUsers;
+
     JwtDecoder decoder = NimbusJwtDecoder.withSecretKey(KEY)
         .macAlgorithm(MacAlgorithm.HS256)
         .build();
@@ -79,6 +82,7 @@ class AuthServiceTest {
             passwords,
             new NimbusJwtEncoder(new ImmutableSecret<>(KEY)),
             mailer,
+            socialUsers,
             ACCESS_TTL,
             REFRESH_TTL,
             VERIFICATION_TTL
@@ -241,6 +245,65 @@ class AuthServiceTest {
         // Same type and same message, so the response does not reveal which emails exist.
         assertThat(unknownEmail.getErrorType()).isEqualTo(wrongPassword.getErrorType());
         assertThat(unknownEmail.getMessage()).isEqualTo(wrongPassword.getMessage());
+    }
+
+    @Test
+    void loginRejectsSocialOnlyUserWithoutCheckingPassword() {
+        when(users.findByEmail("alice@example.com")).thenReturn(
+            Optional.of(User.social("alice@example.com"))
+        );
+
+        ApiException error = thrownBy(() -> service.login("alice@example.com", "anything"));
+
+        assertThat(error.getErrorType()).isEqualTo(ErrorType.INVALID_CREDENTIALS);
+        verify(passwords, never()).matches(any(), any());
+    }
+
+    // ---------- loginWithProvider ----------
+
+    static final SocialProfile GOOGLE_PROFILE = new SocialProfile(
+        "google",
+        "sub-1",
+        "alice@example.com",
+        true
+    );
+
+    @Test
+    void loginWithProviderIssuesTokensForResolvedUser() {
+        User user = userWithId("alice@example.com", null);
+        when(socialUsers.resolve(GOOGLE_PROFILE)).thenReturn(user);
+
+        Tokens tokens = service.loginWithProvider(GOOGLE_PROFILE);
+
+        assertThat(decoder.decode(tokens.accessToken()).getSubject()).isEqualTo(
+            user.getId().toString()
+        );
+        verify(refreshTokens).save(any(RefreshToken.class));
+    }
+
+    @Test
+    void loginWithProviderRetriesOnceAfterUniqueViolation() {
+        User user = userWithId("alice@example.com", null);
+        when(socialUsers.resolve(GOOGLE_PROFILE))
+            .thenThrow(new DataIntegrityViolationException("uk_users_email"))
+            .thenReturn(user);
+
+        Tokens tokens = service.loginWithProvider(GOOGLE_PROFILE);
+
+        assertThat(tokens.refreshToken()).isNotBlank();
+        verify(socialUsers, times(2)).resolve(GOOGLE_PROFILE);
+    }
+
+    @Test
+    void loginWithProviderGivesUpAfterSecondViolation() {
+        DataIntegrityViolationException second = new DataIntegrityViolationException("again");
+        when(socialUsers.resolve(GOOGLE_PROFILE))
+            .thenThrow(new DataIntegrityViolationException("first"))
+            .thenThrow(second);
+
+        assertThatThrownBy(() -> service.loginWithProvider(GOOGLE_PROFILE)).isSameAs(second);
+        verify(socialUsers, times(2)).resolve(GOOGLE_PROFILE);
+        verify(refreshTokens, never()).save(any());
     }
 
     // ---------- refresh ----------

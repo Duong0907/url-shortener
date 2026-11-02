@@ -60,4 +60,35 @@ class UserTest {
         assertThat(user.getVerificationExpiresAt()).isNull();
         assertThat(user.hasUsableVerification(NOW)).isFalse();
     }
+
+    @Test
+    void socialUserHasNoPasswordAndIsVerified() {
+        User user = User.social("alice@example.com");
+
+        assertThat(user.getPasswordHash()).isNull();
+        assertThat(user.isEmailVerified()).isTrue();
+    }
+
+    @Test
+    void confirmEmailFromProviderClearsPasswordOfUnverifiedUser() {
+        User user = new User("alice@example.com", "hash");
+        user.startVerification("h", NOW.plusSeconds(60));
+
+        user.confirmEmailFromProvider();
+
+        assertThat(user.getPasswordHash()).isNull();
+        assertThat(user.isEmailVerified()).isTrue();
+        assertThat(user.hasUsableVerification(NOW)).isFalse();
+    }
+
+    @Test
+    void confirmEmailFromProviderKeepsPasswordOfVerifiedUser() {
+        User user = new User("alice@example.com", "hash");
+        user.verifyEmail();
+
+        user.confirmEmailFromProvider();
+
+        assertThat(user.getPasswordHash()).isEqualTo("hash");
+        assertThat(user.isEmailVerified()).isTrue();
+    }
 }
