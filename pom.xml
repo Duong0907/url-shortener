@@ -62,6 +62,10 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-client</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
 		<dependency>
@@ -117,6 +121,11 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-client-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
@@ -149,6 +158,8 @@
 				<configuration>
 					<systemPropertyVariables>
 						<JWT_SECRET>test-only-secret-that-is-at-least-32-bytes</JWT_SECRET>
+						<GOOGLE_CLIENT_ID>test-client-id</GOOGLE_CLIENT_ID>
+						<GOOGLE_CLIENT_SECRET>test-client-secret</GOOGLE_CLIENT_SECRET>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

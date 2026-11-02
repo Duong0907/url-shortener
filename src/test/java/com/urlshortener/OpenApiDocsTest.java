@@ -65,6 +65,24 @@ class OpenApiDocsTest {
     }
 
     @Test
+    void documentsGoogleSignInOnTheAuthTag() throws Exception {
+        // Spring Security serves these endpoints, so the UI learns the contract from the tag.
+        mvc.perform(get("/v3/api-docs")).andExpect(
+            jsonPath("$.tags[?(@.name == 'Auth')].description").value(
+                org.hamcrest.Matchers.hasItem(
+                    org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString(
+                            "/api/auth/oauth2/authorization/google"
+                        ),
+                        org.hamcrest.Matchers.containsString("/auth/callback"),
+                        org.hamcrest.Matchers.containsString("oauth_failed")
+                    )
+                )
+            )
+        );
+    }
+
+    @Test
     void servesSwaggerUi() throws Exception {
         mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
     }

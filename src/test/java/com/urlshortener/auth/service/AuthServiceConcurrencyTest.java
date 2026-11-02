@@ -9,6 +9,7 @@ import com.urlshortener.TestcontainersConfiguration;
 import com.urlshortener.auth.entity.RefreshToken;
 import com.urlshortener.auth.entity.User;
 import com.urlshortener.auth.repository.RefreshTokenRepository;
+import com.urlshortener.auth.repository.UserIdentityRepository;
 import com.urlshortener.auth.repository.UserRepository;
 import com.urlshortener.auth.service.AuthService.Tokens;
 import com.urlshortener.error.ApiException;
@@ -46,6 +47,9 @@ class AuthServiceConcurrencyTest {
 
     @Autowired
     RefreshTokenRepository refreshTokens;
+
+    @Autowired
+    UserIdentityRepository identities;
 
     // No SMTP server in tests. The mock also captures the raw tokens that would be mailed.
     @MockitoBean
@@ -193,6 +197,31 @@ class AuthServiceConcurrencyTest {
         } else {
             assertThat(user.getVerificationTokenHash()).isNotNull();
         }
+    }
+
+    @Test
+    void parallelFirstLoginsWithOneGoogleAccountCreateOneUser() throws Exception {
+        SocialProfile profile = new SocialProfile("google", "race-sub", "race@example.com", true);
+
+        List<Object> results = runInParallel(THREADS, () -> service.loginWithProvider(profile));
+
+        assertThat(results).allSatisfy(r -> assertThat(r).isInstanceOf(Tokens.class));
+        assertThat(users.findByEmail("race@example.com")).isPresent();
+        assertThat(users.count()).isEqualTo(1);
+        assertThat(identities.count()).isEqualTo(1);
+    }
+
+    @Test
+    void parallelFirstLoginsLinkAnExistingAccountOnce() throws Exception {
+        service.register("race@example.com", "correct-horse");
+        markVerified("race@example.com");
+        SocialProfile profile = new SocialProfile("google", "race-sub", "race@example.com", true);
+
+        List<Object> results = runInParallel(THREADS, () -> service.loginWithProvider(profile));
+
+        assertThat(results).allSatisfy(r -> assertThat(r).isInstanceOf(Tokens.class));
+        assertThat(users.count()).isEqualTo(1);
+        assertThat(identities.count()).isEqualTo(1);
     }
 
     private void markVerified(String email) {

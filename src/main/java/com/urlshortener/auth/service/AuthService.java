@@ -39,6 +39,7 @@ public class AuthService {
     private final PasswordEncoder passwords;
     private final JwtEncoder jwtEncoder;
     private final VerificationMailer mailer;
+    private final SocialUserResolver socialUsers;
 
     @Value("${app.jwt.access-ttl}")
     private final Duration accessTtl;
@@ -77,6 +78,8 @@ public class AuthService {
     public Tokens login(String email, String password) {
         User user = users
             .findByEmail(normalize(email))
+            // Social-only accounts have no password hash and cannot log in this way.
+            .filter(u -> u.getPasswordHash() != null)
             .filter(u -> passwords.matches(password, u.getPasswordHash()))
             .orElseThrow(() ->
                 new ApiException(ErrorType.INVALID_CREDENTIALS, "Invalid email or password")
@@ -84,6 +87,20 @@ public class AuthService {
 
         if (!user.isEmailVerified()) {
             throw new ApiException(ErrorType.EMAIL_NOT_VERIFIED, "Email is not verified");
+        }
+
+        return issueTokens(user);
+    }
+
+    // Not @Transactional: each resolve attempt needs its own transaction, because
+    // Postgres aborts a transaction after a constraint violation.
+    public Tokens loginWithProvider(SocialProfile profile) {
+        User user;
+        try {
+            user = socialUsers.resolve(profile);
+        } catch (DataIntegrityViolationException e) {
+            // A parallel first login for the same person committed first. Its rows are now visible.
+            user = socialUsers.resolve(profile);
         }
 
         return issueTokens(user);
@@ -186,7 +203,7 @@ public class AuthService {
         }
     }
 
-    private static String normalize(String email) {
+    static String normalize(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 

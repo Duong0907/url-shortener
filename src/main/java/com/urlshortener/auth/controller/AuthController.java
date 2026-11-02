@@ -14,16 +14,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import java.time.Duration;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,15 +28,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@Tag(name = "Auth")
+@Tag(
+    name = "Auth",
+    description = "Google sign-in (served by Spring Security, so not listed below): " +
+        "send the browser (full page navigation, through the UI proxy) to " +
+        "GET /api/auth/oauth2/authorization/google. It returns to {UI}/auth/callback, " +
+        "with ?error=email_not_verified, access_denied or oauth_failed on failure. " +
+        "On success the refresh_token cookie is set: call POST /api/auth/refresh " +
+        "for the access token."
+)
 public class AuthController {
 
-    static final String REFRESH_COOKIE = "refresh_token";
+    static final String REFRESH_COOKIE = RefreshCookies.NAME;
 
     private final AuthService auth;
-
-    @Value("${app.refresh-token.cookie-secure}")
-    private final boolean secureCookie;
+    private final RefreshCookies refreshCookies;
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
@@ -103,7 +102,7 @@ public class AuthController {
             auth.logout(refreshToken);
         }
         return ResponseEntity.noContent()
-            .header(HttpHeaders.SET_COOKIE, refreshCookie("", Duration.ZERO).toString())
+            .header(HttpHeaders.SET_COOKIE, refreshCookies.clear().toString())
             .build();
     }
 
@@ -134,23 +133,9 @@ public class AuthController {
 
     private ResponseEntity<AccessTokenResponse> withTokens(AuthService.Tokens tokens) {
         return ResponseEntity.ok()
-            .header(
-                HttpHeaders.SET_COOKIE,
-                refreshCookie(tokens.refreshToken(), auth.refreshTtl()).toString()
-            )
+            .header(HttpHeaders.SET_COOKIE, refreshCookies.issue(tokens.refreshToken()).toString())
             .body(
                 new AccessTokenResponse(tokens.accessToken(), "Bearer", tokens.expiresInSeconds())
             );
-    }
-
-    // Path limits the cookie to /api/auth, so it never rides along on link or redirect requests.
-    private ResponseCookie refreshCookie(String value, Duration maxAge) {
-        return ResponseCookie.from(REFRESH_COOKIE, value)
-            .httpOnly(true)
-            .secure(secureCookie)
-            .sameSite("Strict")
-            .path("/api/auth")
-            .maxAge(maxAge)
-            .build();
     }
 }

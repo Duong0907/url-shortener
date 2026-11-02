@@ -55,6 +55,22 @@ class SecurityConfigTest {
     }
 
     @Test
+    void protectedApiStillReturns401NotARedirectToGoogle() throws Exception {
+        // oauth2Login's default entry point redirects browser-like requests to the provider.
+        mvc.perform(get("/api/links").accept(MediaType.TEXT_HTML))
+            .andExpect(status().isUnauthorized())
+            .andExpect(header().doesNotExist("Location"));
+        mvc.perform(get("/api/links"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(header().doesNotExist("Location"));
+    }
+
+    @Test
+    void generatedLoginPageIsOff() throws Exception {
+        mvc.perform(get("/login").accept(MediaType.TEXT_HTML)).andExpect(status().isNotFound());
+    }
+
+    @Test
     void protectedApiLetsAValidTokenThrough() throws Exception {
         // 404 (no such route) instead of 401 proves the request passed the security filter.
         mvc.perform(get(PROTECTED_PATH)).andExpect(status().isUnauthorized());
