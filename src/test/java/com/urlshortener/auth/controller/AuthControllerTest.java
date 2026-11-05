@@ -19,8 +19,12 @@ import com.jayway.jsonpath.JsonPath;
 import com.urlshortener.TestcontainersConfiguration;
 import com.urlshortener.auth.entity.RefreshToken;
 import com.urlshortener.auth.entity.User;
+import com.urlshortener.auth.oauth.GoogleIdTokenVerifier;
 import com.urlshortener.auth.repository.RefreshTokenRepository;
 import com.urlshortener.auth.repository.UserRepository;
+import com.urlshortener.auth.service.SocialProfile;
+import com.urlshortener.error.ApiException;
+import com.urlshortener.error.ErrorType;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -61,6 +65,9 @@ class AuthControllerTest {
 
     @MockitoBean
     JavaMailSender mailSender;
+
+    @MockitoBean
+    GoogleIdTokenVerifier googleTokens;
 
     @Autowired
     JwtDecoder jwtDecoder;
@@ -664,7 +671,70 @@ class AuthControllerTest {
         verifyEmail("x").andExpect(status().isBadRequest());
     }
 
+    // ---------- google one tap ----------
+
+    @Test
+    void oneTapReturnsAccessTokenAndRefreshCookie() throws Exception {
+        Mockito.when(googleTokens.verify("good")).thenReturn(
+            new SocialProfile("google", "sub-1", "a@example.com", true)
+        );
+
+        oneTap("good")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accessToken").isNotEmpty())
+            .andExpect(jsonPath("$.tokenType").value("Bearer"))
+            .andExpect(header().string("Set-Cookie", containsString("refresh_token=")));
+        assertThat(users.findByEmail("a@example.com")).isPresent();
+    }
+
+    @Test
+    void repeatedOneTapReusesSameUser() throws Exception {
+        Mockito.when(googleTokens.verify("good")).thenReturn(
+            new SocialProfile("google", "sub-1", "a@example.com", true)
+        );
+
+        oneTap("good").andExpect(status().isOk());
+        oneTap("good").andExpect(status().isOk());
+
+        assertThat(users.count()).isEqualTo(1);
+    }
+
+    @Test
+    void invalidGoogleTokenIs401() throws Exception {
+        Mockito.when(googleTokens.verify("bad")).thenThrow(
+            new ApiException(ErrorType.GOOGLE_TOKEN_INVALID, "x")
+        );
+
+        oneTap("bad")
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.type").value("urn:problem:google-token-invalid"))
+            .andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    @Test
+    void unverifiedEmailIsForbidden() throws Exception {
+        Mockito.when(googleTokens.verify("good")).thenReturn(
+            new SocialProfile("google", "sub-1", "a@example.com", false)
+        );
+
+        oneTap("good")
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.type").value("urn:problem:email-not-verified"));
+    }
+
+    @Test
+    void blankCredentialIs400() throws Exception {
+        oneTap("")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.type").value("urn:problem:validation-failed"));
+        verify(googleTokens, never()).verify(any());
+    }
+
     // ---------- helpers ----------
+
+    private ResultActions oneTap(String credential) throws Exception {
+        return postJson("/api/auth/google/one-tap", "{\"credential\":\"" + credential + "\"}");
+    }
 
     private ResultActions register(String email, String password) throws Exception {
         return postJson("/api/auth/register", registration(email, password, password));

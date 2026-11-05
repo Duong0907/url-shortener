@@ -27,6 +27,11 @@ public enum ErrorType {
         "Refresh token is invalid",
         HttpStatus.UNAUTHORIZED
     ),
+    GOOGLE_TOKEN_INVALID(
+        "urn:problem:google-token-invalid",
+        "Google ID token is invalid",
+        HttpStatus.UNAUTHORIZED
+    ),
     EMAIL_NOT_VERIFIED(
         "urn:problem:email-not-verified",
         "Email is not verified",

@@ -1,12 +1,14 @@
 package com.urlshortener.auth.controller;
 
 import com.urlshortener.auth.dto.AccessTokenResponse;
+import com.urlshortener.auth.dto.GoogleOneTapRequest;
 import com.urlshortener.auth.dto.LoginRequest;
 import com.urlshortener.auth.dto.RegisterRequest;
 import com.urlshortener.auth.dto.ResendVerificationRequest;
 import com.urlshortener.auth.dto.UserResponse;
 import com.urlshortener.auth.dto.VerifyEmailRequest;
 import com.urlshortener.auth.entity.User;
+import com.urlshortener.auth.oauth.GoogleIdTokenVerifier;
 import com.urlshortener.auth.service.AuthService;
 import com.urlshortener.error.ApiException;
 import com.urlshortener.error.ErrorType;
@@ -35,7 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
         "GET /api/auth/oauth2/authorization/google. It returns to {UI}/auth/callback, " +
         "with ?error=email_not_verified, access_denied or oauth_failed on failure. " +
         "On success the refresh_token cookie is set: call POST /api/auth/refresh " +
-        "for the access token."
+        "for the access token. " +
+        "Google One Tap: POST the GIS credential to /api/auth/google/one-tap."
 )
 public class AuthController {
 
@@ -43,6 +46,7 @@ public class AuthController {
 
     private final AuthService auth;
     private final RefreshCookies refreshCookies;
+    private final GoogleIdTokenVerifier googleTokens;
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
@@ -68,6 +72,22 @@ public class AuthController {
     @ApiResponse(responseCode = "403", description = "Email is not verified")
     public ResponseEntity<AccessTokenResponse> login(@Valid @RequestBody LoginRequest body) {
         return withTokens(auth.login(body.email(), body.password()));
+    }
+
+    @PostMapping("/google/one-tap")
+    @Operation(
+        summary = "Sign in with Google One Tap",
+        description = "Exchanges the Google ID token (GIS credential) for an access token " +
+            "and sets the refresh_token cookie."
+    )
+    @ApiResponse(responseCode = "200", description = "Access token; refresh_token cookie is set")
+    @ApiResponse(responseCode = "400", description = "Credential is missing")
+    @ApiResponse(responseCode = "401", description = "Google ID token is invalid")
+    @ApiResponse(responseCode = "403", description = "Email is not verified")
+    public ResponseEntity<AccessTokenResponse> googleOneTap(
+        @Valid @RequestBody GoogleOneTapRequest body
+    ) {
+        return withTokens(auth.loginWithProvider(googleTokens.verify(body.credential())));
     }
 
     @PostMapping("/refresh")
